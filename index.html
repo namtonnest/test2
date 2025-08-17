@@ -173,6 +173,7 @@
         { id: 'foodtruck', name: 'Food truck', url: 'https://raw.githubusercontent.com/namtonnest/3dmodels/main/food_truck.glb' }
     ];
 
+
     function loadLibrary() {
         try {
             const raw = localStorage.getItem(LIB_KEY);
@@ -202,6 +203,9 @@
 
     // Add traffic cone model requested by user (idempotent)
     addModelToLibraryUrl('https://raw.githubusercontent.com/namtonnest/3dmodels/main/traffic_cone.glb', 'Traffic cone');
+
+    // Add police car model requested by user (idempotent)
+    addModelToLibraryUrl('https://raw.githubusercontent.com/namtonnest/3dmodels/main/cop_sedan_90_-_low_poly_model.glb', 'Police car');
 
     // thumbnail cache key
     const THUMB_KEY = 'model_thumbs_v1';
@@ -373,9 +377,13 @@
         controls.id = 'model-controls';
         controls.innerHTML = `
                 <div style="font-weight:600;margin-bottom:6px;">Model controls</div>
-                <label>Rotate X (deg): <input id="rotX" type="number" value="90"></label>
-                <label>Rotate Y (deg): <input id="rotY" type="number" value="0"></label>
-                <label>Rotate Z (deg): <input id="rotZ" type="number" value="0"></label>
+                <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Rotate (deg):
+                    <button id="rot-dec" type="button" class="btn secondary" style="padding:4px 8px;min-width:36px">◀</button>
+                    <input id="rot" type="number" value="0" step="1" style="width:88px;padding:6px;border-radius:6px;border:1px solid rgba(2,6,23,0.06)">
+                    <button id="rot-inc" type="button" class="btn secondary" style="padding:4px 8px;min-width:36px">▶</button>
+                    <span style="font-size:12px;color:var(--muted);margin-left:6px">Step:</span>
+                    <input id="rotStep" type="number" value="15" step="1" style="width:64px;padding:6px;border-radius:6px;border:1px solid rgba(2,6,23,0.06)">
+                </label>
                 <label>Scale: <input id="scale" type="number" step="0.1" value="1"></label>
                 <div style="margin-top:8px;font-size:12px">Nudge (meters): <input id="nudgeStep" type="number" value="1" style="width:60px"> </div>
                 <div style="margin-top:6px">
@@ -425,9 +433,10 @@
         refreshControlsToggleVisibility();
 
     // control elements
-    const rotX = document.getElementById('rotX');
-    const rotY = document.getElementById('rotY');
-    const rotZ = document.getElementById('rotZ');
+    const rot = document.getElementById('rot');
+    const rotInc = document.getElementById('rot-inc');
+    const rotDec = document.getElementById('rot-dec');
+    const rotStepInput = document.getElementById('rotStep');
     const scaleInput = document.getElementById('scale');
     const nudgeStep = document.getElementById('nudgeStep');
     const nudgeN = document.getElementById('nudgeN');
@@ -443,7 +452,7 @@
 
     // disabled until a model is placed
     function setControlsDisabled(disabled) {
-        [rotX, rotY, rotZ, scaleInput, nudgeStep, nudgeN, nudgeS, nudgeE, nudgeW, resetModelBtn, removeModelBtn, altitudeInput, altStepInput, altUpBtn, altDownBtn].forEach(el => { if (el) el.disabled = disabled; });
+        [rot, rotInc, rotDec, rotStepInput, scaleInput, nudgeStep, nudgeN, nudgeS, nudgeE, nudgeW, resetModelBtn, removeModelBtn, altitudeInput, altStepInput, altUpBtn, altDownBtn].forEach(el => { if (el) el.disabled = disabled; });
     }
     setControlsDisabled(true);
 
@@ -454,9 +463,8 @@
         if (!selectedModelId) return;
         const entry = placedModels.find(p => p.id === selectedModelId);
         if (!entry) return;
-        entry.transform.rotateX = degToRad(Number(rotX.value || 0));
-        entry.transform.rotateY = degToRad(Number(rotY.value || 0));
-        entry.transform.rotateZ = degToRad(Number(rotZ.value || 0));
+        // Only allow yaw (Y) rotation from the UI. Keep X/Z rotations at their stored values.
+        entry.transform.rotateY = degToRad(Number(rot.value || 0));
         // scaleInput is a multiplier on the stored meterScale
         if (entry.meterScale) {
             entry.transform.scale = entry.meterScale * Number(scaleInput.value || 1);
@@ -466,10 +474,29 @@
     renderSidebar();
     if (map) map.triggerRepaint();
     }
+    // debounce helper so rapid input changes (mobile) don't trigger excessive map repaints
+    function debounce(fn, wait) {
+        let t = null;
+        return function (...args) {
+            if (t) clearTimeout(t);
+            t = setTimeout(() => { t = null; fn.apply(this, args); }, wait);
+        };
+    }
 
-    rotX.addEventListener('input', applyTransformsFromInputs);
-    rotY.addEventListener('input', applyTransformsFromInputs);
-    rotZ.addEventListener('input', applyTransformsFromInputs);
+    const debouncedApply = debounce(applyTransformsFromInputs, 120);
+    if (rot) rot.addEventListener('input', debouncedApply);
+
+    // step buttons to change yaw by rotStep degrees for easier mobile use
+    if (rotInc) rotInc.addEventListener('click', () => {
+        const step = Number(rotStepInput && rotStepInput.value) || 15;
+        rot.value = Number(rot.value || 0) + step;
+        applyTransformsFromInputs();
+    });
+    if (rotDec) rotDec.addEventListener('click', () => {
+        const step = Number(rotStepInput && rotStepInput.value) || 15;
+        rot.value = Number(rot.value || 0) - step;
+        applyTransformsFromInputs();
+    });
     scaleInput.addEventListener('input', applyTransformsFromInputs);
 
     function nudge(direction) {
@@ -507,14 +534,11 @@
         entry.transform.translateX = entry.original.translateX;
         entry.transform.translateY = entry.original.translateY;
         entry.transform.translateZ = entry.original.translateZ;
-        entry.transform.rotateX = entry.original.rotateX;
-        entry.transform.rotateY = entry.original.rotateY;
-        entry.transform.rotateZ = entry.original.rotateZ;
+    // preserve original X/Z rotations, but restore yaw (Y) from original
+    entry.transform.rotateY = entry.original.rotateY;
         if (entry.meterScale) entry.transform.scale = entry.meterScale;
         // update UI
-        rotX.value = Math.round((entry.transform.rotateX * 180 / Math.PI) * 100) / 100;
-        rotY.value = Math.round((entry.transform.rotateY * 180 / Math.PI) * 100) / 100;
-        rotZ.value = Math.round((entry.transform.rotateZ * 180 / Math.PI) * 100) / 100;
+    if (rot) rot.value = Math.round((entry.transform.rotateY * 180 / Math.PI) * 100) / 100;
         scaleInput.value = 1;
         // update coords/rotation shown in sidebar
         updateEntryGeo(entry);
@@ -708,7 +732,7 @@
             const info = document.createElement('div');
             info.className = 'info';
             const coordText = entry.geo ? `Lng: ${entry.geo.lng.toFixed(6)}, Lat: ${entry.geo.lat.toFixed(6)}, Alt: ${entry.geo.alt}` : '';
-            const rotDeg = `RX:${((entry.transform.rotateX*180/Math.PI)||0).toFixed(1)}° RY:${((entry.transform.rotateY*180/Math.PI)||0).toFixed(1)}° RZ:${((entry.transform.rotateZ*180/Math.PI)||0).toFixed(1)}°`;
+            const rotDeg = `R:${((entry.transform.rotateY*180/Math.PI)||0).toFixed(1)}°`;
             info.textContent = (coordText ? coordText + ' • ' : '') + rotDeg;
 
             const leftCol = document.createElement('div');
@@ -749,9 +773,7 @@
         const entry = placedModels.find(p => p.id === id);
         if (!entry) return;
         setControlsDisabled(false);
-        rotX.value = Math.round((entry.transform.rotateX * 180 / Math.PI) * 100) / 100;
-        rotY.value = Math.round((entry.transform.rotateY * 180 / Math.PI) * 100) / 100;
-        rotZ.value = Math.round((entry.transform.rotateZ * 180 / Math.PI) * 100) / 100;
+    if (rot) rot.value = Math.round((entry.transform.rotateY * 180 / Math.PI) * 100) / 100;
         scaleInput.value = Math.round((entry.transform.scale / (entry.meterScale || 1)) * 100) / 100;
         renderSidebar();
         if (map) map.triggerRepaint();
@@ -972,9 +994,7 @@
                     const threshold = Math.pow(50 * (best.meterScale || 1), 2); // ~50 meters
                     if (bestDist < threshold) {
                         selectedModelId = best.id;
-                        rotX.value = Math.round((best.transform.rotateX * 180 / Math.PI) * 100) / 100;
-                        rotY.value = Math.round((best.transform.rotateY * 180 / Math.PI) * 100) / 100;
-                        rotZ.value = Math.round((best.transform.rotateZ * 180 / Math.PI) * 100) / 100;
+                        if (rot) rot.value = Math.round((best.transform.rotateY * 180 / Math.PI) * 100) / 100;
                         scaleInput.value = Math.round((best.transform.scale / (best.meterScale || 1)) * 100) / 100;
                         setControlsDisabled(false);
                     }
@@ -1014,9 +1034,7 @@
                 entry.original = Object.assign({}, entry.transform);
 
                 setControlsDisabled(false);
-                rotX.value = Math.round((entry.transform.rotateX * 180 / Math.PI) * 100) / 100;
-                rotY.value = Math.round((entry.transform.rotateY * 180 / Math.PI) * 100) / 100;
-                rotZ.value = Math.round((entry.transform.rotateZ * 180 / Math.PI) * 100) / 100;
+                if (rot) rot.value = Math.round((entry.transform.rotateY * 180 / Math.PI) * 100) / 100;
                 scaleInput.value = 1;
             }
         }
