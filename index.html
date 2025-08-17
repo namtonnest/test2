@@ -423,9 +423,12 @@
     // add a toggle button to show/hide controls on small screens
     const controlsToggle = document.createElement('button');
     controlsToggle.id = 'controls-toggle-btn';
-    controlsToggle.className = 'btn secondary';
+    // match desktop button styling
+    controlsToggle.className = 'btn';
     controlsToggle.textContent = 'Controls';
     controlsToggle.style.display = 'none';
+    controlsToggle.style.padding = '6px 10px';
+    controlsToggle.style.fontWeight = '600';
     // place the toggle inside the left topbar column so it sits under the brand and buttons
     const leftColumn = document.querySelector('.controls-left > div') || document.querySelector('.controls-left') || document.body;
     // remove absolute positioning so it participates in the layout
