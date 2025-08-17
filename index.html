@@ -75,6 +75,11 @@
     /* Controls toggle (default hidden on desktop) - positioned below the topbar */
     #controls-toggle-btn{position:absolute; right:18px; top:56px; z-index:7; display:none;}
 
+    /* Address/search bar at bottom */
+    #address-bar{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;z-index:9;background:rgba(255,255,255,0.98);padding:8px;border-radius:10px;box-shadow:var(--shadow);display:flex;gap:8px;align-items:center;min-width:320px;max-width:90%}
+    #address-bar input{flex:1;padding:8px;border-radius:6px;border:1px solid rgba(2,6,23,0.06)}
+    #address-bar button{padding:8px 10px;border-radius:8px}
+
 </style>
 </head>
 <body>
@@ -83,8 +88,11 @@
 <!-- Topbar markup: buttons are defined in HTML so JS doesn't inline-style them -->
 <div class="topbar">
     <div class="controls-left">
-        <div class="brand">Location</div>
-        <button id="add-model-btn" class="btn">Add model</button>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-right:6px">
+            <div class="brand">Location</div>
+            <button id="add-image-btn" class="btn" style="padding:6px 10px;font-weight:600;">Add image</button>
+            <button id="add-model-btn" class="btn" style="padding:6px 10px;">Add model</button>
+        </div>
         <button id="open-models-btn" class="btn secondary">Models</button>
         <button id="open-library-btn" class="btn secondary">Library</button>
         <button id="share-btn" class="btn secondary">Share</button>
@@ -1104,6 +1112,214 @@
     // hide tooltip when mouse leaves the map canvas
     const canvas = map.getCanvas && map.getCanvas();
     if (canvas) canvas.addEventListener('mouseleave', hideModelTooltip);
+
+// --- Address / location bar (bottom) ---
+const addressBar = document.createElement('div');
+addressBar.id = 'address-bar';
+addressBar.innerHTML = `
+    <input id="address-input" placeholder="Enter address or lat,lng (e.g. -79.3875,43.6426)" />
+    <button id="address-go" class="btn">Go</button>
+    <button id="address-clear" class="btn secondary">Clear</button>
+`;
+document.body.appendChild(addressBar);
+
+const addressInput = document.getElementById('address-input');
+const addressGo = document.getElementById('address-go');
+const addressClear = document.getElementById('address-clear');
+let addressMarker = null;
+
+function clearAddressMarker() {
+    if (addressMarker) {
+        try { addressMarker.remove(); } catch (e) {}
+        addressMarker = null;
+    }
+}
+
+addressClear.addEventListener('click', () => {
+    clearAddressMarker();
+});
+
+// helper: parse lat,lng input or fallback to geocoding
+function tryParseLatLng(text) {
+    const parts = text.split(',').map(s => s.trim());
+    if (parts.length === 2) {
+        const lng = Number(parts[0]);
+        const lat = Number(parts[1]);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) return [lng, lat];
+    }
+    return null;
+}
+
+async function forwardGeocode(query) {
+    try {
+        const token = mapboxgl.accessToken;
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&limit=1`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const j = await res.json();
+        if (j && j.features && j.features.length) {
+            const f = j.features[0];
+            return [f.center[0], f.center[1]];
+        }
+    } catch (e) { console.warn('Geocode failed', e); }
+    return null;
+}
+
+addressGo.addEventListener('click', async () => {
+    const txt = (addressInput.value || '').trim();
+    if (!txt) return;
+    // try parse coords first
+    let coords = tryParseLatLng(txt);
+    if (!coords) coords = await forwardGeocode(txt);
+    if (!coords) return alert('Location not found');
+    // fly to location
+    map.flyTo({ center: coords, zoom: 18, essential: true });
+    clearAddressMarker();
+    // add a temporary marker
+    addressMarker = new mapboxgl.Marker({ color: '#ff6a00' }).setLngLat(coords).addTo(map);
+});
+
+// --- Image placement + persistence using IndexedDB ---
+// Add hidden file input and wire Add image button
+const addImageBtn = document.getElementById('add-image-btn');
+const fileInput = document.createElement('input');
+fileInput.type = 'file';
+fileInput.accept = 'image/*';
+fileInput.style.display = 'none';
+document.body.appendChild(fileInput);
+
+// IndexedDB helpers
+const DB_NAME = 'map_images_db';
+const DB_STORE = 'images_v1';
+function openDb() {
+    return new Promise((resolve, reject) => {
+        const r = indexedDB.open(DB_NAME, 1);
+        r.onupgradeneeded = () => {
+            const db = r.result;
+            if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: 'id' });
+        };
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+    });
+}
+
+async function saveImageRecord(rec) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        const store = tx.objectStore(DB_STORE);
+        const req = store.put(rec);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function deleteImageRecord(id) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        const store = tx.objectStore(DB_STORE);
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function listImageRecords() {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readonly');
+        const store = tx.objectStore(DB_STORE);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// UI state for placing an image
+let pendingImageDataUrl = null;
+
+addImageBtn.addEventListener('click', () => { fileInput.click(); });
+
+fileInput.addEventListener('change', async (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    // read as data URL (suitable for small/medium images)
+    const reader = new FileReader();
+    reader.onload = () => {
+        pendingImageDataUrl = reader.result;
+        alert('Now click on the map to place the image');
+    };
+    reader.readAsDataURL(f);
+    // reset input
+    fileInput.value = '';
+});
+
+// place image on map when user clicks while pendingImageDataUrl set
+map.on('click', async (e) => {
+    if (!pendingImageDataUrl) return;
+    const lngLat = [e.lngLat.lng, e.lngLat.lat];
+    const id = 'img_' + Date.now();
+    // create marker element (thumbnail)
+    const img = document.createElement('img');
+    img.src = pendingImageDataUrl;
+    img.style.width = '120px';
+    img.style.height = '80px';
+    img.style.objectFit = 'cover';
+    img.style.borderRadius = '6px';
+
+    const marker = new mapboxgl.Marker({ element: img }).setLngLat(lngLat).addTo(map);
+
+    // popup with full image and delete button
+    const popupDiv = document.createElement('div');
+    const full = document.createElement('img');
+    full.src = pendingImageDataUrl;
+    full.style.maxWidth = '300px';
+    full.style.display = 'block';
+    full.style.marginBottom = '6px';
+    popupDiv.appendChild(full);
+    const delBtn = document.createElement('button');
+    delBtn.textContent = 'Remove image';
+    delBtn.className = 'btn secondary';
+    popupDiv.appendChild(delBtn);
+
+    const popup = new mapboxgl.Popup().setDOMContent(popupDiv).setMaxWidth('320px');
+    marker.setPopup(popup);
+
+    // save to IndexedDB
+    const rec = { id, dataUrl: pendingImageDataUrl, lng: lngLat[0], lat: lngLat[1], created: Date.now() };
+    try { await saveImageRecord(rec); } catch (e) { console.warn('Failed saving image to IndexedDB', e); }
+
+    // wire delete
+    delBtn.addEventListener('click', async () => {
+        try { await deleteImageRecord(id); marker.remove(); } catch (e) { console.warn(e); }
+    });
+
+    // clear pending
+    pendingImageDataUrl = null;
+});
+
+// load saved images on startup
+(async function restoreImages() {
+    try {
+        const rows = await listImageRecords();
+        for (const r of rows) {
+            try {
+                const img = document.createElement('img');
+                img.src = r.dataUrl;
+                img.style.width = '120px'; img.style.height = '80px'; img.style.objectFit = 'cover'; img.style.borderRadius = '6px';
+                const marker = new mapboxgl.Marker({ element: img }).setLngLat([r.lng, r.lat]).addTo(map);
+                const popupDiv = document.createElement('div');
+                const full = document.createElement('img'); full.src = r.dataUrl; full.style.maxWidth = '300px'; full.style.display = 'block'; full.style.marginBottom = '6px';
+                popupDiv.appendChild(full);
+                const delBtn = document.createElement('button'); delBtn.textContent = 'Remove image'; delBtn.className = 'btn secondary'; popupDiv.appendChild(delBtn);
+                const popup = new mapboxgl.Popup().setDOMContent(popupDiv).setMaxWidth('320px');
+                marker.setPopup(popup);
+                delBtn.addEventListener('click', async () => { try { await deleteImageRecord(r.id); marker.remove(); } catch (e) { console.warn(e); } });
+            } catch (e) { console.warn('Failed restoring image', e); }
+        }
+    } catch (e) { console.warn('Failed listing image records', e); }
+})();
 </script>
 
 </body>
