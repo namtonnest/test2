@@ -85,6 +85,8 @@
 <body>
 <script src="https://unpkg.com/three@0.126.0/build/three.min.js"></script>
 <script src="https://unpkg.com/three@0.126.0/examples/js/loaders/GLTFLoader.js"></script>
+<!-- LZ-String for compressing share payloads to shorter URL-safe strings -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
 <!-- Topbar markup: buttons are defined in HTML so JS doesn't inline-style them -->
 <div class="topbar">
     <div class="controls-left">
@@ -690,8 +692,20 @@
         try {
             const data = serializePlacedModels();
             const payload = JSON.stringify({ mapCenter: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing(), models: data });
-            const b64 = btoa(unescape(encodeURIComponent(payload)));
-            const url = location.origin + location.pathname + '?state=' + encodeURIComponent(b64);
+            // compress using LZ-String to get a shorter, URL-safe string
+            let compressed = null;
+            try {
+                compressed = LZString.compressToEncodedURIComponent(payload);
+            } catch (e) {
+                console.warn('LZString compression failed, falling back to base64', e);
+            }
+            let url;
+            if (compressed) {
+                url = location.origin + location.pathname + '?s=' + compressed; // short compressed param
+            } else {
+                const b64 = btoa(unescape(encodeURIComponent(payload)));
+                url = location.origin + location.pathname + '?state=' + encodeURIComponent(b64);
+            }
             navigator.clipboard.writeText(url).then(() => alert('Share URL copied to clipboard'));
         } catch (e) { alert('Failed to create share URL: ' + e.message); }
     });
@@ -700,6 +714,19 @@
     (function tryRestoreFromUrl(){
         try {
             const params = new URLSearchParams(window.location.search);
+            const sCompressed = params.get('s');
+            if (sCompressed) {
+                try {
+                    const json = LZString.decompressFromEncodedURIComponent(sCompressed);
+                    if (json) {
+                        const parsed = JSON.parse(json);
+                        localStorage.setItem('map_saved_state', JSON.stringify(parsed));
+                        setTimeout(() => { loadState(); }, 500);
+                        return;
+                    }
+                } catch (e) { console.warn('Failed to decompress state param', e); }
+            }
+            // fallback to legacy 'state' param (base64)
             const s = params.get('state');
             if (!s) return;
             const json = decodeURIComponent(atob(s));
