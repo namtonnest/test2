@@ -59,7 +59,7 @@
     .lib-item img.thumb{width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid rgba(2,6,23,0.04);margin-right:8px}
 
     /* Model controls */
-    #model-controls{position:absolute; right:18px; top:12px; z-index:5; background:rgba(255,255,255,0.98); padding:12px; border-radius:12px; box-shadow:var(--shadow); min-width:220px}
+    #model-controls{position:absolute; right:18px; top:12px; z-index:12; background:rgba(255,255,255,0.98); padding:12px; border-radius:12px; box-shadow:var(--shadow); min-width:220px; pointer-events:auto}
     #model-controls label{display:block; font-size:13px; color:var(--ui-text)}
     #model-controls input[type=number]{width:86px; padding:6px; margin-left:8px; border-radius:6px; border:1px solid rgba(2,6,23,0.06)}
 
@@ -89,13 +89,20 @@
 <div class="topbar">
     <div class="controls-left">
         <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-right:6px">
-            <div class="brand">Location</div>
-            <button id="add-image-btn" class="btn" style="padding:6px 10px;font-weight:600;">Add image</button>
-            <button id="add-model-btn" class="btn" style="padding:6px 10px;">Add model</button>
+            <div style="display:flex;align-items:center;gap:8px">
+                <div class="brand">Location</div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button id="open-models-btn" class="btn secondary">Models</button>
+                    <button id="open-library-btn" class="btn secondary">Library</button>
+                    <button id="share-btn" class="btn secondary">Share</button>
+                </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+                <button id="add-image-btn" class="btn" style="padding:6px 10px;font-weight:600;">Add image</button>
+                <button id="add-model-btn" class="btn" style="padding:6px 10px;">Add model</button>
+                <button id="desktop-controls-btn" class="btn" style="padding:6px 10px;display:none">Controls</button>
+            </div>
         </div>
-        <button id="open-models-btn" class="btn secondary">Models</button>
-        <button id="open-library-btn" class="btn secondary">Library</button>
-        <button id="share-btn" class="btn secondary">Share</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
         <!-- placeholder for future search / account -->
@@ -441,11 +448,29 @@
         function refreshControlsToggleVisibility() {
             const isMobile = window.matchMedia && window.matchMedia('(max-width:640px)').matches;
             controlsToggle.style.display = isMobile ? 'block' : 'none';
-            // ensure controls visible on desktop
-            if (!isMobile) controls.style.display = 'block';
+            // do not auto-open the controls panel on load; user can open it explicitly
+            if (!isMobile) controls.style.display = 'none';
         }
         window.addEventListener('resize', refreshControlsToggleVisibility);
         refreshControlsToggleVisibility();
+
+        // Desktop controls button (visible only on non-mobile) - wire to same toggle logic
+        const desktopControlsBtn = document.getElementById('desktop-controls-btn');
+        function refreshDesktopControlsVisibility() {
+            const isMobile = window.matchMedia && window.matchMedia('(max-width:640px)').matches;
+            if (desktopControlsBtn) desktopControlsBtn.style.display = isMobile ? 'none' : 'block';
+        }
+        if (desktopControlsBtn) {
+            desktopControlsBtn.addEventListener('click', () => {
+                const showing = controls.style.display === 'block';
+                controls.style.display = showing ? 'none' : 'block';
+                // when controls are open, ensure overlays accept pointer events
+                setOverlayBlocking(!showing);
+                desktopControlsBtn.textContent = showing ? 'Controls' : 'Close';
+            });
+        }
+        window.addEventListener('resize', refreshDesktopControlsVisibility);
+        refreshDesktopControlsVisibility();
 
     // control elements
     const rot = document.getElementById('rot');
@@ -651,7 +676,7 @@
                 // pass saved id and name so the restored entry keeps its identity
                 if (modelLayerRef && modelLayerRef.loadModel) modelLayerRef.loadModel(encodeURI(url), transform, geo, m.id, m.name);
             });
-            sidebar.classList.remove('hidden');
+            // do not automatically open the models sidebar when restoring state; let user open it
             renderSidebar();
         } catch (e) {
             alert('Failed to restore state: ' + e.message);
