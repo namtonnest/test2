@@ -97,7 +97,6 @@
                     <button id="open-models-btn" class="btn secondary">Models</button>
                     <button id="open-library-btn" class="btn secondary">Library</button>
                     <button id="share-btn" class="btn secondary">Share</button>
-                    <button id="short-share-btn" class="btn secondary" title="Short URL stored locally">Short URL (local)</button>
                 </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
@@ -711,43 +710,10 @@
         } catch (e) { alert('Failed to create share URL: ' + e.message); }
     });
 
-    // Short local share: store compressed payload in localStorage and share a short key
-    const shortShareBtn = document.getElementById('short-share-btn');
-    function makeShortKey() { return 's' + Math.random().toString(36).slice(2,9); }
-    if (shortShareBtn) {
-        shortShareBtn.addEventListener('click', () => {
-            try {
-                const data = serializePlacedModels();
-                const payload = JSON.stringify({ mapCenter: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing(), models: data });
-                const compressed = LZString.compressToEncodedURIComponent(payload);
-                const key = makeShortKey();
-                try { localStorage.setItem('short_state_' + key, compressed); } catch (e) { alert('Failed to save short state locally: ' + e.message); return; }
-                const url = location.origin + location.pathname + '?k=' + key;
-                navigator.clipboard.writeText(url).then(() => alert('Short URL copied to clipboard'));
-            } catch (e) { alert('Failed to create short share: ' + e.message); }
-        });
-    }
-
     // Try to restore state from URL param 'state' on load
     (function tryRestoreFromUrl(){
         try {
             const params = new URLSearchParams(window.location.search);
-            // check for short local key first
-            const k = params.get('k');
-            if (k) {
-                try {
-                    const stored = localStorage.getItem('short_state_' + k);
-                    if (stored) {
-                        const json = LZString.decompressFromEncodedURIComponent(stored);
-                        if (json) {
-                            const parsed = JSON.parse(json);
-                            localStorage.setItem('map_saved_state', JSON.stringify(parsed));
-                            setTimeout(() => { loadState(); }, 500);
-                            return;
-                        }
-                    }
-                } catch (e) { console.warn('Failed to restore from short key', e); }
-            }
             const sCompressed = params.get('s');
             if (sCompressed) {
                 try {
