@@ -413,13 +413,20 @@
         `;
         document.body.appendChild(controls);
 
-        // add a toggle button to show/hide controls on small screens
-        const controlsToggle = document.createElement('button');
-        controlsToggle.id = 'controls-toggle-btn';
-        controlsToggle.className = 'btn secondary';
-        controlsToggle.textContent = 'Controls';
-        controlsToggle.style.display = 'none';
-        document.body.appendChild(controlsToggle);
+    // add a toggle button to show/hide controls on small screens
+    const controlsToggle = document.createElement('button');
+    controlsToggle.id = 'controls-toggle-btn';
+    controlsToggle.className = 'btn secondary';
+    controlsToggle.textContent = 'Controls';
+    controlsToggle.style.display = 'none';
+    // place the toggle inside the left topbar column so it sits under the brand and buttons
+    const leftColumn = document.querySelector('.controls-left > div') || document.querySelector('.controls-left') || document.body;
+    // remove absolute positioning so it participates in the layout
+    controlsToggle.style.position = 'static';
+    controlsToggle.style.right = '';
+    controlsToggle.style.top = '';
+    controlsToggle.style.marginTop = '6px';
+    leftColumn.appendChild(controlsToggle);
 
         // wire toggle behavior
         controlsToggle.addEventListener('click', () => {
