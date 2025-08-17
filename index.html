@@ -86,11 +86,8 @@
         <div class="brand">Location</div>
         <button id="add-model-btn" class="btn">Add model</button>
         <button id="open-models-btn" class="btn secondary">Models</button>
-            <button id="open-library-btn" class="btn secondary">Library</button>
-        <button id="save-btn" class="btn secondary">Save</button>
-        <button id="load-btn" class="btn secondary">Load</button>
+        <button id="open-library-btn" class="btn secondary">Library</button>
         <button id="share-btn" class="btn secondary">Share</button>
-        <button id="states-btn" class="btn secondary">States</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
         <!-- placeholder for future search / account -->
@@ -138,10 +135,7 @@
     const modelsBtn = document.getElementById('open-models-btn');
 
     // topbar buttons exist in DOM; just reference them
-    const saveBtn = document.getElementById('save-btn');
-    const loadBtn = document.getElementById('load-btn');
     const shareBtn = document.getElementById('share-btn');
-    const statesBtn = document.getElementById('states-btn');
 
     const note = document.getElementById('map-note');
 
@@ -611,8 +605,6 @@
         }
     }
 
-    saveBtn.addEventListener('click', () => saveState());
-    loadBtn.addEventListener('click', () => loadState());
     shareBtn.addEventListener('click', () => {
         try {
             const data = serializePlacedModels();
