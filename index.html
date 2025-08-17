@@ -63,22 +63,17 @@
     #model-controls label{display:block; font-size:13px; color:var(--ui-text)}
     #model-controls input[type=number]{width:86px; padding:6px; margin-left:8px; border-radius:6px; border:1px solid rgba(2,6,23,0.06)}
 
-    /* Mobile menu */
-    #mobile-toggle-btn{display:none}
-    #mobile-menu{position:absolute; left:8px; right:8px; top:56px; z-index:7; display:none; background:rgba(255,255,255,0.98); padding:10px; border-radius:10px; box-shadow:var(--shadow)}
-    #mobile-menu .menu-item{display:block;padding:10px;border-radius:8px;border:1px solid rgba(2,6,23,0.04);margin-bottom:8px;background:transparent;color:var(--ui-text);text-align:left}
-
     @media(max-width:640px){
         #sidebar{width:100%; height:260px; bottom:auto;}
         .topbar{left:8px; right:8px}
         #model-controls{right:8px; left:8px; top:auto; bottom:12px}
-    /* hide many desktop buttons and show mobile toggle */
-    .controls-left .btn { display: none; }
-    .controls-left .brand { margin-right: 8px; }
-    #mobile-toggle-btn { display: inline-flex; }
-    #library{left:8px; right:8px; transform:none; min-width:unset}
-    #library-list .lib-item{flex-direction:row}
+        /* hide controls by default on mobile; a toggle button will open them */
+        #model-controls{display:none}
+        #controls-toggle-btn{display:block}
     }
+
+    /* Controls toggle (default hidden on desktop) */
+    #controls-toggle-btn{position:absolute; right:18px; top:12px; z-index:7; display:none;}
 
 </style>
 </head>
@@ -89,7 +84,6 @@
 <div class="topbar">
     <div class="controls-left">
         <div class="brand">Location</div>
-        <button id="mobile-toggle-btn" class="btn secondary" aria-expanded="false">☰</button>
         <button id="add-model-btn" class="btn">Add model</button>
         <button id="open-models-btn" class="btn secondary">Models</button>
             <button id="open-library-btn" class="btn secondary">Library</button>
@@ -105,8 +99,6 @@
 
 <div id="map-note">Click on the map to place the model, or click the button again to cancel.</div>
 <div id="map"></div>
-<!-- Mobile menu (populated by JS) -->
-<div id="mobile-menu" aria-hidden="true"></div>
 <!-- Model library panel -->
 <div id="library" aria-hidden="true">
     <h4>Model library</h4>
@@ -330,45 +322,6 @@
         renderLibrary();
     });
 
-    // --- Mobile menu wiring ---
-    const mobileToggle = document.getElementById('mobile-toggle-btn');
-    const mobileMenu = document.getElementById('mobile-menu');
-    function buildMobileMenu() {
-        mobileMenu.innerHTML = '';
-        const items = [
-            { id: 'm-lib', label: 'Library', action: () => openLibraryBtn.click() },
-            { id: 'm-models', label: 'Models', action: () => modelsBtn.click() },
-            { id: 'm-add', label: 'Add model', action: () => addBtn.click() },
-            { id: 'm-save', label: 'Save', action: () => saveBtn.click() },
-            { id: 'm-load', label: 'Load', action: () => loadBtn.click() },
-            { id: 'm-share', label: 'Share', action: () => shareBtn.click() }
-        ];
-        items.forEach(it => {
-            const b = document.createElement('button');
-            b.className = 'menu-item';
-            b.textContent = it.label;
-            b.addEventListener('click', () => {
-                it.action();
-                // close mobile menu after action
-                mobileMenu.style.display = 'none';
-                mobileToggle.setAttribute('aria-expanded', 'false');
-            });
-            mobileMenu.appendChild(b);
-        });
-    }
-
-    mobileToggle.addEventListener('click', () => {
-        const open = mobileMenu.style.display === 'block';
-        if (!open) {
-            buildMobileMenu();
-            mobileMenu.style.display = 'block';
-            mobileToggle.setAttribute('aria-expanded', 'true');
-        } else {
-            mobileMenu.style.display = 'none';
-            mobileToggle.setAttribute('aria-expanded', 'false');
-        }
-    });
-
 
     let placingModel = false;
     let modelUrl = defaultModelUrl;
@@ -423,9 +376,45 @@
                     <button id="nudgeE">E</button>
                     <button id="nudgeS">S</button>
                 </div>
-                <div style="margin-top:8px"><button id="resetModel">Reset</button></div>
+                <div style="margin-top:8px">
+                    <button id="resetModel">Reset</button>
+                    <button id="removeModel" style="margin-left:8px;background:#fee2e2;border:1px solid #fecaca;color:#7f1d1d;border-radius:6px;padding:6px 8px;">Remove</button>
+                </div>
+                <div style="margin-top:8px">
+                    <label style="font-size:13px">Altitude (m): <input id="altitude" type="number" value="0" style="width:80px;margin-left:8px"></label>
+                    <label style="font-size:13px;margin-left:8px">Step: <input id="altStep" type="number" value="1" style="width:60px;margin-left:6px"></label>
+                    <button id="altUp" style="margin-left:8px">Up</button>
+                    <button id="altDown" style="margin-left:4px">Down</button>
+                </div>
         `;
         document.body.appendChild(controls);
+
+        // add a toggle button to show/hide controls on small screens
+        const controlsToggle = document.createElement('button');
+        controlsToggle.id = 'controls-toggle-btn';
+        controlsToggle.className = 'btn secondary';
+        controlsToggle.textContent = 'Controls';
+        controlsToggle.style.display = 'none';
+        document.body.appendChild(controlsToggle);
+
+        // wire toggle behavior
+        controlsToggle.addEventListener('click', () => {
+            const showing = controls.style.display === 'block';
+            controls.style.display = showing ? 'none' : 'block';
+            controlsToggle.textContent = showing ? 'Controls' : 'Close';
+            // when controls are open, make sure overlays accept pointer events
+            setOverlayBlocking(!showing);
+        });
+
+        // show toggle if on mobile-sized viewport
+        function refreshControlsToggleVisibility() {
+            const isMobile = window.matchMedia && window.matchMedia('(max-width:640px)').matches;
+            controlsToggle.style.display = isMobile ? 'block' : 'none';
+            // ensure controls visible on desktop
+            if (!isMobile) controls.style.display = 'block';
+        }
+        window.addEventListener('resize', refreshControlsToggleVisibility);
+        refreshControlsToggleVisibility();
 
     // control elements
     const rotX = document.getElementById('rotX');
@@ -438,10 +427,15 @@
     const nudgeE = document.getElementById('nudgeE');
     const nudgeW = document.getElementById('nudgeW');
     const resetModelBtn = document.getElementById('resetModel');
+    const removeModelBtn = document.getElementById('removeModel');
+    const altitudeInput = document.getElementById('altitude');
+    const altStepInput = document.getElementById('altStep');
+    const altUpBtn = document.getElementById('altUp');
+    const altDownBtn = document.getElementById('altDown');
 
     // disabled until a model is placed
     function setControlsDisabled(disabled) {
-        [rotX, rotY, rotZ, scaleInput, nudgeStep, nudgeN, nudgeS, nudgeE, nudgeW, resetModelBtn].forEach(el => el.disabled = disabled);
+        [rotX, rotY, rotZ, scaleInput, nudgeStep, nudgeN, nudgeS, nudgeE, nudgeW, resetModelBtn, removeModelBtn, altitudeInput, altStepInput, altUpBtn, altDownBtn].forEach(el => { if (el) el.disabled = disabled; });
     }
     setControlsDisabled(true);
 
@@ -520,6 +514,53 @@
         if (map) map.triggerRepaint();
     });
 
+    // remove selected model
+    if (removeModelBtn) {
+        removeModelBtn.addEventListener('click', () => {
+            if (!selectedModelId) return;
+            removeModel(selectedModelId);
+        });
+    }
+
+    // altitude helpers
+    function changeAltitudeByMeters(deltaMeters) {
+        if (!selectedModelId) return;
+        const entry = placedModels.find(p => p.id === selectedModelId);
+        if (!entry) return;
+        // need meter->mercator conversion using entry.meterScale (mercator units per meter)
+        const scale = entry.meterScale || 1;
+        const deltaMerc = deltaMeters * scale;
+        entry.transform.translateZ = (entry.transform.translateZ || 0) + deltaMerc;
+        // update geo.alt (store altitude in meters)
+        entry.geo = entry.geo || { lng: 0, lat: 0, alt: 0 };
+        entry.geo.alt = (entry.geo.alt || 0) + deltaMeters;
+        // reflect in the altitude input
+        if (altitudeInput) altitudeInput.value = Math.round(entry.geo.alt * 100) / 100;
+        renderSidebar();
+        if (map) map.triggerRepaint();
+    }
+
+    if (altUpBtn) altUpBtn.addEventListener('click', () => {
+        const step = Number(altStepInput && altStepInput.value) || 1;
+        changeAltitudeByMeters(step);
+    });
+    if (altDownBtn) altDownBtn.addEventListener('click', () => {
+        const step = Number(altStepInput && altStepInput.value) || 1;
+        changeAltitudeByMeters(-step);
+    });
+
+    if (altitudeInput) {
+        altitudeInput.addEventListener('change', () => {
+            if (!selectedModelId) return;
+            const entry = placedModels.find(p => p.id === selectedModelId);
+            if (!entry) return;
+            const newAlt = Number(altitudeInput.value) || 0;
+            const currentAlt = (entry.geo && entry.geo.alt) ? entry.geo.alt : 0;
+            const delta = newAlt - currentAlt;
+            changeAltitudeByMeters(delta);
+        });
+    }
+
     // --- Save / Load to localStorage ---
     function serializePlacedModels() {
         return placedModels.map(p => ({
@@ -555,10 +596,13 @@
             placedModels.slice().forEach(p => removeModel(p.id));
             // restore saved models
             (parsed.models || []).forEach(m => {
-                const url = m.url || defaultModelUrl;
+                // prefer the saved URL (if any). previously the code used defaultModelUrl which caused
+                // restored models to always appear as the food truck when the saved URL wasn't applied.
+                const url = (m.url && m.url.length) ? m.url : defaultModelUrl;
                 const transform = Object.assign({}, m.transform);
                 const geo = m.geo ? [m.geo.lng, m.geo.lat, m.geo.alt || 0] : null;
-                if (modelLayerRef && modelLayerRef.loadModel) modelLayerRef.loadModel(encodeURI(url), transform, geo, m.id);
+                // pass saved id and name so the restored entry keeps its identity
+                if (modelLayerRef && modelLayerRef.loadModel) modelLayerRef.loadModel(encodeURI(url), transform, geo, m.id, m.name);
             });
             sidebar.classList.remove('hidden');
             renderSidebar();
@@ -753,15 +797,19 @@
 
             // helper to load a GLTF into the scene without clearing previous models
             // accepts (url, transform) and returns an id for the placed model
-        this.loadModel = (url, transform, geo) => {
-                const id = String(Date.now()) + '-' + Math.floor(Math.random() * 10000);
+        // loadModel(url, transform, geo, preferredId, preferredName)
+        // Accept optional preferredId and preferredName so restored states can keep original ids and names
+        this.loadModel = (url, transform, geo, preferredId, preferredName) => {
+                const id = preferredId || (String(Date.now()) + '-' + Math.floor(Math.random() * 10000));
         const entry = {
             id,
-            name: 'Model ' + (placedModels.length + 1),
+            name: preferredName || ('Model ' + (placedModels.length + 1)),
         transform: Object.assign({}, transform),
             original: Object.assign({}, transform),
             meterScale: transform.scale,
         object: null,
+        // persist the original URL so serializePlacedModels can save it
+        url: url,
         geo: geo ? { lng: geo[0], lat: geo[1], alt: geo[2] || 0 } : null,
         originalGeoLat: geo ? geo[1] : null,
         originalGeoLng: geo ? geo[0] : null
@@ -791,9 +839,9 @@
                                     }
                                 }
                             });
-                                    entry.object = gltf.scene;
-                                    this.scene.add(gltf.scene);
-                            renderSidebar();
+                            entry.object = gltf.scene;
+                            this.scene.add(gltf.scene);
+                        renderSidebar();
                         },
                         undefined,
                         (err) => {
