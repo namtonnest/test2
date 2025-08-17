@@ -134,6 +134,24 @@
 
     const modelsBtn = document.getElementById('open-models-btn');
 
+    // make the top-left brand act as a quick "reset to empty" action
+    const brandBtn = document.querySelector('.brand');
+    if (brandBtn) {
+        brandBtn.style.cursor = 'pointer';
+        brandBtn.title = 'Reload page without any placed models';
+        brandBtn.addEventListener('click', () => {
+            // remove all placed models from the scene
+            try {
+                placedModels.slice().forEach(p => removeModel(p.id));
+            } catch (e) { /* ignore if not ready */ }
+            // clear saved state so reload starts empty
+            try { localStorage.removeItem('map_saved_state'); } catch (e) {}
+            // reload without query string or hash
+            const base = window.location.origin + window.location.pathname;
+            window.location.href = base;
+        });
+    }
+
     // topbar buttons exist in DOM; just reference them
     const shareBtn = document.getElementById('share-btn');
 
@@ -266,12 +284,8 @@
                 generateThumbnail(item.url, item.name).then(dataUrl => { thumbImg.src = dataUrl; });
             }
             const title = document.createElement('div');
-            title.textContent = item.name || item.url;
-            const url = document.createElement('div');
-            url.className = 'url';
-            url.textContent = item.url;
+            title.textContent = item.name || 'Model';
             info.appendChild(title);
-            info.appendChild(url);
             const actions = document.createElement('div');
             const selectBtn = document.createElement('button');
             selectBtn.textContent = 'Use';
@@ -1011,6 +1025,67 @@
     // (user can click Add model again to cancel)
         if (map) map.triggerRepaint();
     });
+
+    // --- Model hover tooltip (show model name when cursor is near a placed model) ---
+    const modelTooltip = document.createElement('div');
+    modelTooltip.id = 'model-tooltip';
+    modelTooltip.style.position = 'absolute';
+    modelTooltip.style.pointerEvents = 'none';
+    modelTooltip.style.padding = '6px 8px';
+    modelTooltip.style.background = 'rgba(255,255,255,0.95)';
+    modelTooltip.style.border = '1px solid rgba(0,0,0,0.08)';
+    modelTooltip.style.borderRadius = '6px';
+    modelTooltip.style.fontFamily = 'sans-serif';
+    modelTooltip.style.fontSize = '13px';
+    modelTooltip.style.color = '#0f1724';
+    modelTooltip.style.zIndex = '10';
+    modelTooltip.style.display = 'none';
+    document.body.appendChild(modelTooltip);
+
+    let hoveredModelId = null;
+
+    function hideModelTooltip() {
+        hoveredModelId = null;
+        modelTooltip.style.display = 'none';
+    }
+
+    // Use pixel-distance hover detection: project each model's geo to screen and compare to mouse point
+    map.on('mousemove', (e) => {
+        if (!placedModels || !placedModels.length) { hideModelTooltip(); return; }
+        const mousePoint = e.point; // pixel coords relative to map container
+        let bestEntry = null;
+        let bestProj = null;
+        let bestDist2 = Infinity;
+        for (const p of placedModels) {
+            if (!p.geo || p.geo.lng === undefined || p.geo.lat === undefined) continue;
+            const proj = map.project([p.geo.lng, p.geo.lat]);
+            const dx = proj.x - mousePoint.x;
+            const dy = proj.y - mousePoint.y;
+            const d2 = dx*dx + dy*dy;
+            if (d2 < bestDist2) { bestDist2 = d2; bestEntry = p; bestProj = proj; }
+        }
+        if (!bestEntry) { hideModelTooltip(); return; }
+        const pixelThreshold = 40; // hover radius in pixels
+        if (bestDist2 <= (pixelThreshold * pixelThreshold)) {
+            if (hoveredModelId !== bestEntry.id) {
+                hoveredModelId = bestEntry.id;
+                modelTooltip.textContent = bestEntry.name || ('Model ' + bestEntry.id);
+            }
+            // position tooltip near mouse pointer using absolute page coords
+            const canvasRect = map.getCanvas().getBoundingClientRect();
+            const absLeft = canvasRect.left + mousePoint.x;
+            const absTop = canvasRect.top + mousePoint.y;
+            modelTooltip.style.left = (absLeft + 12) + 'px';
+            modelTooltip.style.top = (absTop + 12) + 'px';
+            modelTooltip.style.display = 'block';
+        } else {
+            hideModelTooltip();
+        }
+    });
+
+    // hide tooltip when mouse leaves the map canvas
+    const canvas = map.getCanvas && map.getCanvas();
+    if (canvas) canvas.addEventListener('mouseleave', hideModelTooltip);
 </script>
 
 </body>
